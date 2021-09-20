@@ -142,7 +142,7 @@ class Authentication(cookie_auth.Authentication):
         self.jwks_lock = threading.Lock()
         self.signing_keys = jwk.JWKSet()
 
-        self.ident = str(random.randint(10000000, 99999999))
+        self.ident = name
 
         if not port:
             port = 443 if ssl else 80
