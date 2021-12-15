@@ -15,12 +15,6 @@ import copy
 import threading
 from base64 import urlsafe_b64encode
 
-try:
-    from urllib.parse import urlencode
-except ImportError:
-    from urllib import urlencode
-
-
 import requests
 from jwcrypto import jwk, jws
 from jwcrypto.common import JWException
@@ -56,6 +50,7 @@ class Login(xml.Component):
 
     def set_sync_action(self, action_id, params):
         pass
+    set_async_action = set_sync_action
 
     def render(self, h):
         if self._action is not None:
@@ -74,9 +69,11 @@ class Login(xml.Component):
             self.scopes
         )
 
+        redirection = h.request.create_redirect_response(url, add_slash=False, **params)
+
         response = h.response
-        response.status_code = 307
-        response.headers['Location'] = url + '?' + urlencode(params)
+        response.status_code = redirection.status_code
+        response.headers = redirection.headers
 
         return response
 
