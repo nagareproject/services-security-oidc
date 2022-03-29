@@ -25,7 +25,7 @@ from nagare.renderers import xml
 from nagare.services.security import cookie_auth
 
 
-class Login(xml.Component):
+class Login(xml.Renderable):
     ACTION_PRIORITY = 5
 
     def __init__(self, manager, renderer, scopes, location):
