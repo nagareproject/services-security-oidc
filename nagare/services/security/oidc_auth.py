@@ -12,6 +12,7 @@
 import os
 import time
 import copy
+import datetime
 import threading
 from base64 import urlsafe_b64encode
 
@@ -99,7 +100,8 @@ class Authentication(cookie_auth.Authentication):
         algorithms='string_list(default=list({}), help="accepted signing/encryption algorithms")'.format(', '.join(jws.default_allowed_algs)),
         key='string(default=None, help="cookie encoding key")',
         jwks_uri='string(default=None, help="JWK keys set document")',
-        issuer='string(default=None, help="server identifier")'
+        issuer='string(default=None, help="server identifier")',
+        time_skew='float(default=0, help="Acceptable time skew with the issuer, in seconds")'
     )
     CONFIG_SPEC['cookie']['activated'] = 'boolean(default=False)'
     CONFIG_SPEC['cookie']['encrypt'] = 'boolean(default=False)'
@@ -110,7 +112,7 @@ class Authentication(cookie_auth.Authentication):
         name, dist,
         client_id, client_secret='', secure=True, algorithms=jws.default_allowed_algs,
         host='localhost', port=None, ssl=True, verify=True, timeout=5, proxy=None,
-        key=None, jwks_uri=None, issuer=None,
+        key=None, jwks_uri=None, issuer=None, time_skew=0,
         services_service=None,
         **config
     ):
@@ -118,7 +120,7 @@ class Authentication(cookie_auth.Authentication):
             super(Authentication, self).__init__, name, dist,
             client_id=client_id, client_secret=client_secret, secure=secure, algorithms=algorithms,
             host=host, port=port, ssl=ssl, verify=verify, timeout=timeout, proxy=proxy,
-            key=key, jwks_uri=jwks_uri, issuer=issuer,
+            key=key, jwks_uri=jwks_uri, issuer=issuer, time_skew=time_skew,
             **config
         )
         self.key = key or urlsafe_b64encode(os.urandom(32)).decode('ascii')
@@ -137,6 +139,7 @@ class Authentication(cookie_auth.Authentication):
         self.jwks_expiration = None
         self.jwks_lock = threading.Lock()
         self.signing_keys = jwk.JWKSet()
+        self.time_skew = time_skew
 
         self.ident = name
 
@@ -354,7 +357,10 @@ class Authentication(cookie_auth.Authentication):
             try:
                 headers, _ = process_jwt(id_token)
                 key = self.signing_keys.get_key(headers.get('kid'))
-                _, id_token = verify_jwt(id_token, key, self.algorithms if self.secure else None, checks_optional=True)
+                _, id_token = verify_jwt(
+                    id_token, key, self.algorithms if self.secure else None,
+                    iat_skew=datetime.timedelta(seconds=self.time_skew), checks_optional=True
+                )
             except (JWException, _JWTError) as e:
                 self.logger.error('Invalid id_token: ' + e.args[0])
             else:
