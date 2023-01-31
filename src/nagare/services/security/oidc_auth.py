@@ -1,7 +1,7 @@
 # Encoding: utf-8
 
 # --
-# Copyright (c) 2008-2022 Net-ng.
+# Copyright (c) 2008-2023 Net-ng.
 # All rights reserved.
 #
 # This software is licensed under the BSD License, as described in
@@ -9,21 +9,20 @@
 # this distribution.
 # --
 
-import os
-import time
+from base64 import urlsafe_b64encode
 import copy
 import datetime
+import os
 import threading
-from base64 import urlsafe_b64encode
+import time
 
-import requests
 from jwcrypto import jwk, jws
 from jwcrypto.common import JWException
-from python_jwt import _JWTError, generate_jwt, process_jwt, verify_jwt
-
-from nagare import partial, log
+from nagare import log, partial
 from nagare.renderers import xml
 from nagare.services.security import cookie_auth
+from python_jwt import _JWTError, generate_jwt, process_jwt, verify_jwt
+import requests
 
 
 class Login(xml.Renderable):
@@ -51,23 +50,19 @@ class Login(xml.Renderable):
 
     def set_sync_action(self, action_id, params):
         pass
+
     set_async_action = set_sync_action
 
     def render(self, h):
         if self._action is not None:
             action_id, _ = self.renderer.register_callback(
-                self,
-                self.ACTION_PRIORITY,
-                self._action,
-                self.with_request, *self.args, **self.kw
+                self, self.ACTION_PRIORITY, self._action, self.with_request, *self.args, **self.kw
             )
         else:
             action_id = None
 
         _, url, params, _ = self.manager.create_auth_request(
-            h.session_id, h.state_id, action_id,
-            h.request.create_redirect_url(self.location),
-            self.scopes
+            h.session_id, h.state_id, action_id, h.request.create_redirect_url(self.location), self.scopes
         )
 
         redirection = h.request.create_redirect_response(url, add_slash=False, **params)
@@ -84,7 +79,11 @@ class Authentication(cookie_auth.Authentication):
 
     REQUIRED_ENDPOINTS = {'authorization_endpoint', 'token_endpoint'}
     ENDPOINTS = REQUIRED_ENDPOINTS | {'discovery_endpoint', 'userinfo_endpoint', 'end_session_endpoint'}
-    EXCLUDED_CLAIMS = {'iss', 'aud', 'exp', 'iat', 'auth_time', 'nonce', 'acr', 'amr', 'azp'} | {'session_state', 'typ', 'nbf'}
+    EXCLUDED_CLAIMS = {'iss', 'aud', 'exp', 'iat', 'auth_time', 'nonce', 'acr', 'amr', 'azp'} | {
+        'session_state',
+        'typ',
+        'nbf',
+    }
 
     CONFIG_SPEC = dict(
         copy.deepcopy(cookie_auth.Authentication.CONFIG_SPEC),
@@ -95,13 +94,15 @@ class Authentication(cookie_auth.Authentication):
         verify='boolean(default=True, help="SSL certificate verification")',
         timeout='integer(default=5, help="communication timeout")',
         client_id='string(help="application identifier")',
-        client_secret='string(default="", help="application authentication")',
+        client_secret='string(default="", help="application authentication")',  # noqa: S106
         secure='boolean(default=True, help="JWT signature verification")',
-        algorithms='string_list(default=list({}), help="accepted signing/encryption algorithms")'.format(', '.join(jws.default_allowed_algs)),
+        algorithms='string_list(default=list({}), help="accepted signing/encryption algorithms")'.format(
+            ', '.join(jws.default_allowed_algs)
+        ),
         key='string(default=None, help="cookie encoding key")',
         jwks_uri='string(default=None, help="JWK keys set document")',
         issuer='string(default=None, help="server identifier")',
-        time_skew='float(default=0, help="Acceptable time skew with the issuer, in seconds")'
+        time_skew='float(default=0, help="Acceptable time skew with the issuer, in seconds")',
     )
     CONFIG_SPEC['cookie']['activated'] = 'boolean(default=False)'
     CONFIG_SPEC['cookie']['encrypt'] = 'boolean(default=False)'
@@ -109,19 +110,44 @@ class Authentication(cookie_auth.Authentication):
 
     def __init__(
         self,
-        name, dist,
-        client_id, client_secret='', secure=True, algorithms=jws.default_allowed_algs,
-        host='localhost', port=None, ssl=True, verify=True, timeout=5, proxy=None,
-        key=None, jwks_uri=None, issuer=None, time_skew=0,
+        name,
+        dist,
+        client_id,
+        client_secret='',  # noqa: S107
+        secure=True,
+        algorithms=jws.default_allowed_algs,
+        host='localhost',
+        port=None,
+        ssl=True,
+        verify=True,
+        timeout=5,
+        proxy=None,
+        key=None,
+        jwks_uri=None,
+        issuer=None,
+        time_skew=0,
         services_service=None,
-        **config
+        **config,
     ):
         services_service(
-            super(Authentication, self).__init__, name, dist,
-            client_id=client_id, client_secret=client_secret, secure=secure, algorithms=algorithms,
-            host=host, port=port, ssl=ssl, verify=verify, timeout=timeout, proxy=proxy,
-            key=key, jwks_uri=jwks_uri, issuer=issuer, time_skew=time_skew,
-            **config
+            super(Authentication, self).__init__,
+            name,
+            dist,
+            client_id=client_id,
+            client_secret=client_secret,
+            secure=secure,
+            algorithms=algorithms,
+            host=host,
+            port=port,
+            ssl=ssl,
+            verify=verify,
+            timeout=timeout,
+            proxy=proxy,
+            key=key,
+            jwks_uri=jwks_uri,
+            issuer=issuer,
+            time_skew=time_skew,
+            **config,
         )
         self.key = key or urlsafe_b64encode(os.urandom(32)).decode('ascii')
         self.jwk_key = jwk.JWK(kty='oct', k=self.key)
@@ -151,15 +177,20 @@ class Authentication(cookie_auth.Authentication):
             scheme='https' if ssl else 'http',
             host=host,
             port=port,
-            base_url='{}://{}:{}'.format(('https' if ssl else 'http'), host, port)
+            base_url='{}://{}:{}'.format(('https' if ssl else 'http'), host, port),
         )
 
         self.endpoints = {endpoint: (config[endpoint] or '').format(**endpoint_params) for endpoint in self.ENDPOINTS}
 
     def send_request(self, method, url, params=None, data=None):
         r = requests.request(
-            method, url, params=params or {}, data=data or {},
-            verify=self.verify, timeout=self.timeout, proxies=self.proxies
+            method,
+            url,
+            params=params or {},
+            data=data or {},
+            verify=self.verify,
+            timeout=self.timeout,
+            proxies=self.proxies,
         )
         r.raise_for_status()
         return r
@@ -172,14 +203,17 @@ class Authentication(cookie_auth.Authentication):
     def create_auth_request(self, session_id, state_id, action_id, redirect_url, scopes=(), **params):
         state = b'%d#%d#%s' % (session_id, state_id, (action_id or '').encode('ascii'))
 
-        params = dict({
-            'response_type': 'code',
-            'client_id': self.client_id,
-            'redirect_uri': redirect_url,
-            'scope': ' '.join({'openid'} | set(scopes)),
-            'access_type': 'offline',
-            'state': '#{}#{}'.format(self.ident, self.encrypt(state).decode('ascii'))
-        }, **params)
+        params = dict(
+            {
+                'response_type': 'code',
+                'client_id': self.client_id,
+                'redirect_uri': redirect_url,
+                'scope': ' '.join({'openid'} | set(scopes)),
+                'access_type': 'offline',
+                'state': '#{}#{}'.format(self.ident, self.encrypt(state).decode('ascii')),
+            },
+            **params,
+        )
 
         return 'GET', self.endpoints['authorization_endpoint'], params, {}
 
@@ -189,7 +223,7 @@ class Authentication(cookie_auth.Authentication):
             'code': code,
             'redirect_uri': redirect_url,
             'client_id': self.client_id,
-            'client_secret': self.client_secret
+            'client_secret': self.client_secret,
         }
 
         return 'POST', self.endpoints['token_endpoint'], {}, payload
@@ -199,17 +233,13 @@ class Authentication(cookie_auth.Authentication):
             'grant_type': 'refresh_token',
             'client_id': self.client_id,
             'client_secret': self.client_secret,
-            'refresh_token': refresh_token
+            'refresh_token': refresh_token,
         }
 
         return 'POST', self.endpoints['token_endpoint'], {}, payload
 
     def create_end_session_request(self, refresh_token):
-        payload = {
-            'client_id': self.client_id,
-            'client_secret': self.client_secret,
-            'refresh_token': refresh_token
-        }
+        payload = {'client_id': self.client_id, 'client_secret': self.client_secret, 'refresh_token': refresh_token}
 
         return 'POST', self.endpoints['end_session_endpoint'], {}, payload
 
@@ -222,7 +252,7 @@ class Authentication(cookie_auth.Authentication):
                 logger = log.get_logger('.keys', self.logger)
 
                 certs = self.send_request('GET', self.jwks_uri)
-                new_keys = set(k['kid'] for k in certs.json()['keys'])
+                new_keys = {k['kid'] for k in certs.json()['keys']}
                 keys = {key.key_id for key in self.signing_keys['keys']}
                 if new_keys != keys:
                     logger.debug('New signing keys fetched: {} -> {}'.format(sorted(keys), sorted(new_keys)))
@@ -271,11 +301,11 @@ class Authentication(cookie_auth.Authentication):
         authorized_party = id_token.get('azp')
 
         return (
-            (not self.issuer or id_token['iss'] == self.issuer) and
-            (self.client_id in audiences) and
-            ((len(audiences) == 1) or (authorized_party is not None)) and
-            ((authorized_party is None) or (self.client_id == authorized_party)) and
-            (id_token['exp'] > time.time())
+            (not self.issuer or id_token['iss'] == self.issuer)
+            and (self.client_id in audiences)
+            and ((len(audiences) == 1) or (authorized_party is not None))
+            and ((authorized_party is None) or (self.client_id == authorized_party))
+            and (id_token['exp'] > time.time())
         )
 
     def refresh_token(self, refresh_token):
@@ -358,8 +388,11 @@ class Authentication(cookie_auth.Authentication):
                 headers, _ = process_jwt(id_token)
                 key = self.signing_keys.get_key(headers.get('kid'))
                 _, id_token = verify_jwt(
-                    id_token, key, self.algorithms if self.secure else None,
-                    iat_skew=datetime.timedelta(seconds=self.time_skew), checks_optional=True
+                    id_token,
+                    key,
+                    self.algorithms if self.secure else None,
+                    iat_skew=datetime.timedelta(seconds=self.time_skew),
+                    checks_optional=True,
                 )
             except (JWException, _JWTError) as e:
                 self.logger.error('Invalid id_token: ' + e.args[0])
@@ -385,18 +418,13 @@ class Authentication(cookie_auth.Authentication):
         if code:
             credentials = self.request_credentials(request, code, action_id)
             if credentials:
-                new_response = request.create_redirect_response(
-                    response=response,
-                    _s=session_id,
-                    _c='%05d' % state_id
-                )
+                new_response = request.create_redirect_response(response=response, _s=session_id, _c='%05d' % state_id)
 
         if not credentials:
             principal, credentials = self.retrieve_credentials(session)
             if not principal:
                 principal, credentials, r = super(Authentication, self).get_principal(
-                    request=request, response=response,
-                    **params
+                    request=request, response=response, **params
                 )
 
         if credentials:
@@ -408,7 +436,7 @@ class Authentication(cookie_auth.Authentication):
         return Login(self, h, scopes, location)
 
     def logout(self, location='', delete_session=True, user=None, access_token=None):
-        """Disconnection of the current user
+        """Disconnection of the current user.
 
         Mark the user object as expired
 
@@ -437,9 +465,9 @@ class Authentication(cookie_auth.Authentication):
 
 class AuthenticationWithDiscovery(Authentication):
     CONFIG_SPEC = dict(
-        Authentication.CONFIG_SPEC,
-        discovery_endpoint='string(default="{base_url}/.well-known/openid-configuration")'
+        Authentication.CONFIG_SPEC, discovery_endpoint='string(default="{base_url}/.well-known/openid-configuration")'
     )
+
 
 # ---------------------------------------------------------------------------------------------------------------------
 
@@ -448,15 +476,12 @@ class KeycloakAuthentication(Authentication):
     CONFIG_SPEC = dict(
         Authentication.CONFIG_SPEC,
         realm='string',
-        discovery_endpoint='string(default="{base_url}/auth/realms/{realm}/.well-known/openid-configuration")'
+        discovery_endpoint='string(default="{base_url}/auth/realms/{realm}/.well-known/openid-configuration")',
     )
 
 
 class GoogleAuthentication(AuthenticationWithDiscovery):
-    CONFIG_SPEC = dict(
-        AuthenticationWithDiscovery.CONFIG_SPEC,
-        host='string(default="accounts.google.com")'
-    )
+    CONFIG_SPEC = dict(AuthenticationWithDiscovery.CONFIG_SPEC, host='string(default="accounts.google.com")')
 
 
 class AzureAuthentication(Authentication):
@@ -464,5 +489,5 @@ class AzureAuthentication(Authentication):
         AuthenticationWithDiscovery.CONFIG_SPEC,
         host='string(default="login.microsoftonline.com")',
         discovery_endpoint='string(default="{base_url}/{tenant}/v2.0/.well-known/openid-configuration")',
-        tenant='string(default="common")'
+        tenant='string(default="common")',
     )
