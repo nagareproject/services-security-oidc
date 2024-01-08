@@ -9,20 +9,17 @@
 # this distribution.
 # --
 
-from base64 import urlsafe_b64encode
-import copy
-import datetime
 import os
-import threading
+import copy
 import time
+import threading
+from base64 import urlsafe_b64decode, urlsafe_b64encode
 
-from jwcrypto import jwk, jws
-from jwcrypto.common import JWException
+import requests
+from jose import JOSEError, jwk, jws, jwt, constants
 from nagare import log, partial
 from nagare.renderers import xml
 from nagare.services.security import cookie_auth
-from python_jwt import _JWTError, generate_jwt, process_jwt, verify_jwt
-import requests
 
 
 class Login(xml.Renderable):
@@ -97,7 +94,7 @@ class Authentication(cookie_auth.Authentication):
         client_secret='string(default="", help="application authentication")',  # noqa: S106
         secure='boolean(default=True, help="JWT signature verification")',
         algorithms='string_list(default=list({}), help="accepted signing/encryption algorithms")'.format(
-            ', '.join(jws.default_allowed_algs)
+            ', '.join('"%s"' % algo for algo in constants.ALGORITHMS.SUPPORTED if algo.isupper())
         ),
         key='string(default=None, help="cookie encoding key")',
         jwks_uri='string(default=None, help="JWK keys set document")',
@@ -115,7 +112,7 @@ class Authentication(cookie_auth.Authentication):
         client_id,
         client_secret='',  # noqa: S107
         secure=True,
-        algorithms=jws.default_allowed_algs,
+        algorithms=constants.ALGORITHMS.SUPPORTED,
         host='localhost',
         port=None,
         ssl=True,
@@ -149,8 +146,9 @@ class Authentication(cookie_auth.Authentication):
             time_skew=time_skew,
             **config,
         )
-        self.key = key or urlsafe_b64encode(os.urandom(32)).decode('ascii')
-        self.jwk_key = jwk.JWK(kty='oct', k=self.key)
+        key = urlsafe_b64decode(key) if key else os.urandom(32)
+        self.jwk_key = jwk.construct(key, 'HS256')
+        self.key = urlsafe_b64encode(key).decode('ascii')
 
         self.timeout = timeout
         self.client_id = client_id
@@ -164,7 +162,7 @@ class Authentication(cookie_auth.Authentication):
         self.jwks_uri = jwks_uri
         self.jwks_expiration = None
         self.jwks_lock = threading.Lock()
-        self.signing_keys = jwk.JWKSet()
+        self.signing_keys = {}
         self.time_skew = time_skew
 
         self.ident = name
@@ -250,15 +248,17 @@ class Authentication(cookie_auth.Authentication):
         if self.jwks_uri and self.jwks_expiration and (time.time() > self.jwks_expiration):
             with self.jwks_lock:
                 logger = log.get_logger('.keys', self.logger)
-
                 certs = self.send_request('GET', self.jwks_uri)
-                new_keys = {k['kid'] for k in certs.json()['keys']}
-                keys = {key.key_id for key in self.signing_keys['keys']}
-                if new_keys != keys:
-                    logger.debug('New signing keys fetched: {} -> {}'.format(sorted(keys), sorted(new_keys)))
-                    self.signing_keys = jwk.JWKSet.from_json(certs.text)
+
+                new_keys = certs.json().get('keys', [])
+                new_keys_id = {key['kid'] for key in new_keys}
+                if new_keys_id != set(self.signing_keys):
+                    logger.debug(
+                        'New signing keys fetched: {} -> {}'.format(sorted(self.signing_keys), sorted(new_keys_id))
+                    )
+                    self.signing_keys = {key['kid']: jwk.construct(key) for key in new_keys}
                 else:
-                    logger.debug('Same signing keys fetched: {}'.format(sorted(keys)))
+                    logger.debug('Same signing keys fetched: {}'.format(sorted(self.signing_keys)))
 
                 cache_controls = [v.split('=') for v in certs.headers['Cache-Control'].split(',') if '=' in v]
                 cache_controls = {k.strip(): v.strip() for k, v in cache_controls}
@@ -296,18 +296,6 @@ class Authentication(cookie_auth.Authentication):
         self.fetch_keys()
         return super(Authentication, self).handle_request(chain, **params)
 
-    def validate_id_token(self, id_token):
-        audiences = set(id_token['aud'].split())
-        authorized_party = id_token.get('azp')
-
-        return (
-            (not self.issuer or id_token['iss'] == self.issuer)
-            and (self.client_id in audiences)
-            and ((len(audiences) == 1) or (authorized_party is not None))
-            and ((authorized_party is None) or (self.client_id == authorized_party))
-            and (id_token['exp'] > time.time())
-        )
-
     def refresh_token(self, refresh_token):
         method, url, params, data = self.create_refresh_token_request(refresh_token)
         return self.send_request(method, url, params, data)
@@ -334,7 +322,7 @@ class Authentication(cookie_auth.Authentication):
         if self.encrypted:
             cookie = super(Authentication, self).to_cookie(credentials.pop('sub'), **credentials)
         else:
-            cookie = generate_jwt(credentials, self.jwk_key, 'HS256')
+            cookie = jwt.encode(credentials, self.jwk_key, 'HS256')
 
         return cookie
 
@@ -343,7 +331,7 @@ class Authentication(cookie_auth.Authentication):
             principal, credentials = super(Authentication, self).from_cookie(cookie, max_age)
             credentials['sub'] = principal
         else:
-            _, credentials = verify_jwt(cookie.decode('ascii'), self.jwk_key, ['HS256'], checks_optional=True)
+            credentials = jwt.decode(cookie.decode('ascii'), self.jwk_key, 'HS256')
             credentials = self.filter_credentials(credentials, {'sub'})
 
         return credentials['sub'], credentials
@@ -385,28 +373,32 @@ class Authentication(cookie_auth.Authentication):
             id_token = tokens['id_token']
 
             try:
-                headers, _ = process_jwt(id_token)
-                key = self.signing_keys.get_key(headers.get('kid'))
-                _, id_token = verify_jwt(
+                headers = jws.get_unverified_header(id_token)
+                key = self.signing_keys.get(headers.get('kid'))
+
+                credentials = jwt.decode(
                     id_token,
                     key,
                     self.algorithms if self.secure else None,
-                    iat_skew=datetime.timedelta(seconds=self.time_skew),
-                    checks_optional=True,
+                    {
+                        'verify_iss': self.issuer is not None,
+                        'verify_at_hash': 'access_token' in tokens,
+                        'leeway': self.time_skew,
+                    },
+                    audience=self.client_id,
+                    issuer=self.issuer,
+                    access_token=tokens.get('access_token'),
                 )
-            except (JWException, _JWTError) as e:
+            except JOSEError as e:
                 self.logger.error('Invalid id_token: ' + e.args[0])
             else:
-                if not self.validate_id_token(id_token):
-                    self.logger.error('Invalid id_token')
-                else:
-                    credentials = dict(id_token, access_token=tokens['access_token'])
-                    refresh_token = tokens.get('refresh_token')
-                    if refresh_token is not None:
-                        credentials['refresh_token'] = refresh_token
+                credentials['access_token'] = tokens['access_token']
+                refresh_token = tokens.get('refresh_token')
+                if refresh_token is not None:
+                    credentials['refresh_token'] = refresh_token
 
-                    if action_id:
-                        request.environ['QUERY_STRING'] = action_id + '='
+                if action_id:
+                    request.environ['QUERY_STRING'] = action_id + '='
 
         return credentials
 
