@@ -1,7 +1,7 @@
 # Encoding: utf-8
 
 # --
-# Copyright (c) 2008-2023 Net-ng.
+# Copyright (c) 2008-2024 Net-ng.
 # All rights reserved.
 #
 # This software is licensed under the BSD License, as described in
@@ -17,6 +17,7 @@ from base64 import urlsafe_b64decode, urlsafe_b64encode
 
 import requests
 from jose import JOSEError, jwk, jws, jwt, constants
+
 from nagare import log, partial
 from nagare.renderers import xml
 from nagare.services.security import cookie_auth
