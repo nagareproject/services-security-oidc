@@ -16,11 +16,8 @@ build-backend = 'setuptools.build_meta'
 name = 'nagare-services-security-oidc'
 dynamic = ['version']
 description = 'OpenID Connect security service'
-authors = [
-    {name = 'Net-ng'},
-    {email = 'contact@net-ng.com'}
-]
-license = {file = 'LICENSE.txt'}
+authors = [{ name = 'Net-ng' }, { email = 'contact@net-ng.com' }]
+license = { file = 'LICENSE.txt' }
 requires-python = '>=3.7'
 dependencies = [
     'requests',
@@ -29,25 +26,24 @@ dependencies = [
     'nagare-services',
     'nagare-services-security',
     'nagare-services-security-oidc-listener',
-    'nagare-renderers-xml'
+    'nagare-renderers-xml',
 ]
 
 [project.readme]
 file = 'README.rst'
 content-type = 'text/x-rst'
 
+[tool.setuptools.dynamic]
+entry-points = { file = 'entry-points.txt' }
+
+[tool.setuptools.package-data]
+'nagare.static' = ['*']
+
 [project.optional-dependencies]
 cryptography = ['python-jose[cryptography]']
 pycryptodome = ['python-jose[pycryptodome]']
 pycrypto = ['python-jose[pycrypto]']
-dev = [
-    'sphinx',
-    'sphinx_rtd_theme',
-    'pre-commit',
-    'ruff',
-    'pytest',
-    'twine'
-]
+dev = ['sphinx', 'sphinx_rtd_theme', 'pre-commit', 'ruff', 'pytest', 'twine']
 
 [project.urls]
 Homepage = 'https://nagare.org'
@@ -56,22 +52,33 @@ Source = 'https://github.com/nagareproject/services-security-oidc'
 Tracker = 'https://github.com/nagareproject/services-security-oidc/issues'
 
 [tool.ruff]
-select = ['C4', 'COM', 'D', 'E', 'ERA', 'F', 'I', 'ISC', 'INP', 'PIE', 'Q', 'S', 'SIM', 'TID', 'W', 'YTT']
-ignore = ['COM812', 'D10', 'ISC001']
-line-length = 120
 src = ['src']
+line-length = 120
+format.quote-style = 'single'
 
-[tool.ruff.flake8-quotes]
-inline-quotes = 'single'
-
-[tool.ruff.pydocstyle]
-convention = 'google'
-
-[tool.ruff.isort]
-length-sort = true
-
-[tool.ruff.format]
-quote-style = 'single'
+[tool.ruff.lint]
+select = [
+    'C4',
+    'COM',
+    'D',
+    'E',
+    'ERA',
+    'F',
+    'I',
+    'ISC',
+    'INP',
+    'PIE',
+    'Q',
+    'S',
+    'SIM',
+    'TID',
+    'W',
+    'YTT',
+]
+ignore = ['COM812', 'D10', 'ISC001']
+isort.length-sort = true
+pydocstyle.convention = 'google'
+flake8-quotes.inline-quotes = 'single'
 
 [tool.pytest.ini_options]
 testpaths = ['tests']

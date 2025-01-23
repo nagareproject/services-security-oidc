@@ -257,7 +257,7 @@ class Authentication(cookie_auth.Authentication):
                     logger.debug(
                         'New signing keys fetched: {} -> {}'.format(sorted(self.signing_keys), sorted(new_keys_id))
                     )
-                    self.signing_keys = {key['kid']: jwk.construct(key) for key in new_keys}
+                    self.signing_keys = {key.pop('kid', None): key for key in new_keys}
                 else:
                     logger.debug('Same signing keys fetched: {}'.format(sorted(self.signing_keys)))
 
@@ -375,7 +375,7 @@ class Authentication(cookie_auth.Authentication):
 
             try:
                 headers = jws.get_unverified_header(id_token)
-                key = self.signing_keys.get(headers.get('kid'))
+                key = self.signing_keys.get(headers.get('kid'), self.signing_keys)
 
                 credentials = jwt.decode(
                     id_token,
