@@ -1,7 +1,5 @@
-# Encoding: utf-8
-
 # --
-# Copyright (c) 2008-2024 Net-ng.
+# Copyright (c) 2008-2025 Net-ng.
 # All rights reserved.
 #
 # This software is licensed under the BSD License, as described in
@@ -36,6 +34,7 @@ class Login(xml.Renderable):
         self.with_request = False
         self.args = ()
         self.kw = {}
+        self.action_id = None
 
     @partial.max_number_of_args(2)
     def action(self, action, args, with_request=False, **kw):
@@ -46,21 +45,17 @@ class Login(xml.Renderable):
 
         return self
 
-    def set_sync_action(self, action_id, params):
-        pass
-
-    set_async_action = set_sync_action
+    def set_action(self, action_id, _):
+        self.action_id = action_id
 
     def render(self, h):
         if self._action is not None:
-            action_id, _ = self.renderer.register_callback(
+            self.renderer.register_callback(
                 self, self.ACTION_PRIORITY, self._action, self.with_request, *self.args, **self.kw
             )
-        else:
-            action_id = None
 
         _, url, params, _ = self.manager.create_auth_request(
-            h.session_id, h.state_id, action_id, h.request.create_redirect_url(self.location), self.scopes
+            h.session_id, h.state_id, self.action_id, h.request.create_redirect_url(self.location), self.scopes
         )
 
         redirection = h.request.create_redirect_response(url, add_slash=False, **params)
@@ -104,7 +99,7 @@ class Authentication(cookie_auth.Authentication):
     )
     CONFIG_SPEC['cookie']['activated'] = 'boolean(default=False)'
     CONFIG_SPEC['cookie']['encrypt'] = 'boolean(default=False)'
-    CONFIG_SPEC.update({endpoint: 'string(default=None)' for endpoint in ENDPOINTS})
+    CONFIG_SPEC.update(dict.fromkeys(ENDPOINTS, 'string(default=None)'))
 
     def __init__(
         self,
@@ -128,7 +123,7 @@ class Authentication(cookie_auth.Authentication):
         **config,
     ):
         services_service(
-            super(Authentication, self).__init__,
+            super().__init__,
             name,
             dist,
             client_id=client_id,
@@ -295,7 +290,7 @@ class Authentication(cookie_auth.Authentication):
 
     def handle_request(self, chain, **params):
         self.fetch_keys()
-        return super(Authentication, self).handle_request(chain, **params)
+        return super().handle_request(chain, **params)
 
     def refresh_token(self, refresh_token):
         method, url, params, data = self.create_refresh_token_request(refresh_token)
@@ -321,7 +316,7 @@ class Authentication(cookie_auth.Authentication):
         credentials = self.filter_credentials(credentials, {'sub'})
 
         if self.encrypted:
-            cookie = super(Authentication, self).to_cookie(credentials.pop('sub'), **credentials)
+            cookie = super().to_cookie(credentials.pop('sub'), **credentials)
         else:
             cookie = jwt.encode(credentials, self.jwk_key, 'HS256')
 
@@ -329,7 +324,7 @@ class Authentication(cookie_auth.Authentication):
 
     def from_cookie(self, cookie, max_age):
         if self.encrypted:
-            principal, credentials = super(Authentication, self).from_cookie(cookie, max_age)
+            principal, credentials = super().from_cookie(cookie, max_age)
             credentials['sub'] = principal
         else:
             credentials = jwt.decode(cookie.decode('ascii'), self.jwk_key, 'HS256')
@@ -416,9 +411,7 @@ class Authentication(cookie_auth.Authentication):
         if not credentials:
             principal, credentials = self.retrieve_credentials(session)
             if not principal:
-                principal, credentials, r = super(Authentication, self).get_principal(
-                    request=request, response=response, **params
-                )
+                principal, credentials, r = super().get_principal(request=request, response=response, **params)
 
         if credentials:
             self.store_credentials(session, credentials)
@@ -437,7 +430,7 @@ class Authentication(cookie_auth.Authentication):
           - ``location`` -- location to redirect to
           - ``delete_session`` -- is the session expired too?
         """
-        status = super(Authentication, self).logout(location, delete_session, user)
+        status = super().logout(location, delete_session, user)
 
         if access_token is not None:
             method, url, params, data = self.create_end_session_request(access_token)
