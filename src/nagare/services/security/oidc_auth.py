@@ -78,25 +78,24 @@ class Authentication(cookie_auth.Authentication):
         'nbf',
     }
 
-    CONFIG_SPEC = dict(
-        copy.deepcopy(cookie_auth.Authentication.CONFIG_SPEC),
-        host='string(default="localhost", help="server hostname")',
-        port='integer(default=None, help="server port")',
-        ssl='boolean(default=True, help="HTTPS protocol")',
-        proxy='string(default=None, help="HTTP/S proxy to use")',
-        verify='boolean(default=True, help="SSL certificate verification")',
-        timeout='integer(default=5, help="communication timeout")',
-        client_id='string(help="application identifier")',
-        client_secret='string(default="", help="application authentication")',  # noqa: S106
-        secure='boolean(default=True, help="JWT signature verification")',
-        algorithms='string_list(default=list({}), help="accepted signing/encryption algorithms")'.format(
+    CONFIG_SPEC = copy.deepcopy(cookie_auth.Authentication.CONFIG_SPEC) | {
+        'host': 'string(default="localhost", help="server hostname")',
+        'port': 'integer(default=None, help="server port")',
+        'ssl': 'boolean(default=True, help="HTTPS protocol")',
+        'proxy': 'string(default=None, help="HTTP/S proxy to use")',
+        'verify': 'boolean(default=True, help="SSL certificate verification")',
+        'timeout': 'integer(default=5, help="communication timeout")',
+        'client_id': 'string(help="application identifier")',
+        'client_secret': 'string(default="", help="application authentication")',  # noqa: S106
+        'secure': 'boolean(default=True, help="JWT signature verification")',
+        'algorithms': 'string_list(default=list({}), help="accepted signing/encryption algorithms")'.format(
             ', '.join('"%s"' % algo for algo in constants.ALGORITHMS.SUPPORTED if algo.isupper())
         ),
-        key='string(default=None, help="cookie encoding key")',
-        jwks_uri='string(default=None, help="JWK keys set document")',
-        issuer='string(default=None, help="server identifier")',
-        time_skew='float(default=0, help="Acceptable time skew with the issuer, in seconds")',
-    )
+        'key': 'string(default=None, help="cookie encoding key")',
+        'jwks_uri': 'string(default=None, help="JWK keys set document")',
+        'issuer': 'string(default=None, help="server identifier")',
+        'time_skew': 'float(default=0, help="Acceptable time skew with the issuer, in seconds")',
+    }
     CONFIG_SPEC['cookie']['activated'] = 'boolean(default=False)'
     CONFIG_SPEC['cookie']['encrypt'] = 'boolean(default=False)'
     CONFIG_SPEC.update(dict.fromkeys(ENDPOINTS, 'string(default=None)'))
@@ -197,17 +196,14 @@ class Authentication(cookie_auth.Authentication):
     def create_auth_request(self, session_id, state_id, action_id, redirect_url, scopes=(), **params):
         state = b'%d#%d#%s' % (session_id, state_id, (action_id or '').encode('ascii'))
 
-        params = dict(
-            {
-                'response_type': 'code',
-                'client_id': self.client_id,
-                'redirect_uri': redirect_url,
-                'scope': ' '.join({'openid'} | set(scopes)),
-                'access_type': 'offline',
-                'state': '#{}#{}'.format(self.ident, self.encrypt(state).decode('ascii')),
-            },
-            **params,
-        )
+        params = {
+            'response_type': 'code',
+            'client_id': self.client_id,
+            'redirect_uri': redirect_url,
+            'scope': ' '.join({'openid'} | set(scopes)),
+            'access_type': 'offline',
+            'state': '#{}#{}'.format(self.ident, self.encrypt(state).decode('ascii')),
+        } | params
 
         return 'GET', self.endpoints['authorization_endpoint'], params, {}
 
@@ -450,30 +446,28 @@ class Authentication(cookie_auth.Authentication):
 
 
 class AuthenticationWithDiscovery(Authentication):
-    CONFIG_SPEC = dict(
-        Authentication.CONFIG_SPEC, discovery_endpoint='string(default="{base_url}/.well-known/openid-configuration")'
-    )
+    CONFIG_SPEC = Authentication.CONFIG_SPEC | {
+        'discovery_endpoint': 'string(default="{base_url}/.well-known/openid-configuration")'
+    }
 
 
 # ---------------------------------------------------------------------------------------------------------------------
 
 
 class KeycloakAuthentication(Authentication):
-    CONFIG_SPEC = dict(
-        Authentication.CONFIG_SPEC,
-        realm='string',
-        discovery_endpoint='string(default="{base_url}/auth/realms/{realm}/.well-known/openid-configuration")',
-    )
+    CONFIG_SPEC = Authentication.CONFIG_SPEC | {
+        'realm': 'string',
+        'discovery_endpoint': 'string(default="{base_url}/auth/realms/{realm}/.well-known/openid-configuration")',
+    }
 
 
 class GoogleAuthentication(AuthenticationWithDiscovery):
-    CONFIG_SPEC = dict(AuthenticationWithDiscovery.CONFIG_SPEC, host='string(default="accounts.google.com")')
+    CONFIG_SPEC = AuthenticationWithDiscovery.CONFIG_SPEC | {'host': 'string(default="accounts.google.com")'}
 
 
 class AzureAuthentication(Authentication):
-    CONFIG_SPEC = dict(
-        AuthenticationWithDiscovery.CONFIG_SPEC,
-        host='string(default="login.microsoftonline.com")',
-        discovery_endpoint='string(default="{base_url}/{tenant}/v2.0/.well-known/openid-configuration")',
-        tenant='string(default="common")',
-    )
+    CONFIG_SPEC = AuthenticationWithDiscovery.CONFIG_SPEC | {
+        'host': 'string(default="login.microsoftonline.com")',
+        'discovery_endpoint': 'string(default="{base_url}/{tenant}/v2.0/.well-known/openid-configuration")',
+        'tenant': 'string(default="common")',
+    }
