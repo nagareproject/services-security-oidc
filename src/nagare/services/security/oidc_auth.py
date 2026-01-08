@@ -16,7 +16,7 @@ from base64 import urlsafe_b64decode, urlsafe_b64encode
 import requests
 from jose import JOSEError, jwk, jws, jwt, constants
 
-from nagare import log, partial
+from nagare import log
 from nagare.renderers import xml
 from nagare.services.security import cookie_auth
 
@@ -36,8 +36,7 @@ class Login(xml.Renderable):
         self.kw = {}
         self.action_id = None
 
-    @partial.max_number_of_args(2)
-    def action(self, action, args, with_request=False, **kw):
+    def action(self, action, *args, with_request=False, **kw):
         self._action = action
         self.with_request = with_request
         self.args = args

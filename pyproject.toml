@@ -23,7 +23,6 @@ requires-python = '>=3.9'
 dependencies = [
     'requests',
     'python-jose',
-    'nagare-partial',
     'nagare-services',
     'nagare-services-security',
     'nagare-services-security-oidc-listener',
