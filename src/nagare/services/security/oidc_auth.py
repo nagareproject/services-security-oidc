@@ -17,6 +17,7 @@ import requests
 from jose import JOSEError, jwk, jws, jwt, constants
 
 from nagare import log
+from nagare.security import fernet
 from nagare.renderers import xml
 from nagare.services.security import cookie_auth
 
@@ -302,7 +303,7 @@ class Authentication(cookie_auth.Authentication):
             try:
                 state = self.decrypt(state.encode('ascii')).decode('ascii')
                 session_id, state_id, action_id = state.split('#')
-            except cookie_auth.InvalidToken:
+            except fernet.InvalidToken:
                 code = None
 
         return code, int(session_id), int(state_id), action_id
